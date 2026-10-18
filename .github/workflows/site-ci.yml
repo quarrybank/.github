@@ -1,0 +1,45 @@
+# Shared CI for every Castlefield site repo (BE#2318 / BE#2322).
+# Callers: jobs.ci.uses: quarrybank/.github/.github/workflows/site-ci.yml@main
+# Each site provides one `npm run ci` script: build once, then lint, tests,
+# link/SEO checks and axe+Lighthouse against that one dist/. On a PR,
+# CI_CHANGED_ONLY=true tells it to check changed pages only.
+name: Site CI
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: "22"
+
+jobs:
+  ci:
+    runs-on: [self-hosted, ci-home]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # After npm ci, which wipes node_modules (jj-site#108).
+      - name: Restore Astro image cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.astro
+          key: astro-img-${{ runner.os }}-${{ hashFiles('src/assets/**', 'astro.config.*', 'package-lock.json') }}
+          restore-keys: |
+            astro-img-${{ runner.os }}-
+
+      - name: Build once and check
+        run: npm run ci
+        env:
+          CI_CHANGED_ONLY: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
